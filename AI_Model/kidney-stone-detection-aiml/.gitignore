@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Datasets & Cleaned data
+data/train/
+data/val/
+data/test/
+raw_dataset/
+raw_dataset_clean/
+
+# Models & Large weights
+*.h5
+*.pth
+*.pt
+*.onnx
+*.pkl
+*.joblib
+!models/.gitkeep
+
+# Logs & Jupyter
+*.log
+logs/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# OS & Environment
+.DS_Store
+.env
+!.env.example
