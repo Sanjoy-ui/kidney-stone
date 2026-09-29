@@ -1,26 +1,133 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:where(.dark, .dark *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    background-color: #f8fafc;
+    color: #03045e;
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  
+  body {
+    background-color: #f8fafc;
+    color: #334155;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Explicit Boxed Container Guarantee */
+.boxed-container {
+  width: 100%;
+  max-width: 1240px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .boxed-container {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+/* Strict Medical Brand Utilities */
+.btn-primary {
+  background-color: #0077b6;
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 9999px;
+  padding: 0.75rem 1.75rem;
+  transition: all 0.25s ease-in-out;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(0, 119, 182, 0.25);
+  text-decoration: none;
+}
+.btn-primary:hover {
+  background-color: #03045e;
+  box-shadow: 0 6px 20px rgba(3, 4, 94, 0.28);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background-color: #ffffff;
+  color: #0077b6;
+  font-weight: 600;
+  border-radius: 9999px;
+  padding: 0.75rem 1.75rem;
+  border: 1.5px solid rgba(0, 119, 182, 0.25);
+  transition: all 0.25s ease-in-out;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+.btn-ghost:hover {
+  border-color: #0077b6;
+  background-color: #caf0f8;
+  color: #03045e;
+}
+
+.med-card {
+  background-color: #ffffff;
+  border: 1px solid rgba(0, 119, 182, 0.12);
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px -2px rgba(0, 119, 182, 0.05);
+  transition: all 0.25s ease-in-out;
+}
+.med-card:hover {
+  border-color: rgba(0, 119, 182, 0.3);
+  box-shadow: 0 14px 28px -4px rgba(0, 119, 182, 0.1);
+}
+
+.med-pill {
+  background-color: #caf0f8;
+  border: 1px solid #90e0ef;
+  border-radius: 9999px;
+  padding: 0.35rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0077b6;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@keyframes meteor {
+  0% {
+    transform: rotate(215deg) translateX(0);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(215deg) translateX(-500px);
+    opacity: 0;
+  }
+}
+
+.animate-meteor-effect {
+  animation: meteor 5s linear infinite;
 }

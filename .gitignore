@@ -127,16 +127,3 @@ desktop.ini
 *.crt
 
 
-
-
-# 2. Stage all clean source files
-git add .
-
-# 3. Create your initial commit
-git commit -m "Initial commit: KidneyStone fullstack project"
-
-# 4. Add your new remote repository
-git remote add origin <YOUR_GITHUB_REPO_URL>
-
-# 5. Push to your repository
-git push -u origin main

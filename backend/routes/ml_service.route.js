@@ -1,13 +1,26 @@
-import express from "express"
-import { otpLimiter } from "../utils/ratelimit.js"
-import { isAuth } from "../middlewares/isAuth.js"
-import { upload } from "../middlewares/multer.middleware.js"
-import { uploadAndAnalyze, uploadAndAnalyzeMultiple } from "../controllers/ml_service.controller.js"
-import { validateImageFile, validateImageFiles } from "../middlewares/fileValidator.js"
+import express from "express";
+import { otpLimiter } from "../utils/ratelimit.js";
+import { isAuth, optionalAuth } from "../middlewares/isAuth.js";
+import { upload } from "../middlewares/multer.middleware.js";
+import {
+    diagnoseInstant,
+    uploadAndAnalyze,
+    uploadAndAnalyzeMultiple
+} from "../controllers/ml_service.controller.js";
+import { validateImageFile, validateImageFiles } from "../middlewares/fileValidator.js";
 
-const ml_service_router = express.Router()
+const ml_service_router = express.Router();
 
-// Single image prediction
+// Real-time Instant Diagnosis (protected: requires logged-in user with valid token)
+ml_service_router.post(
+    "/diagnose",
+    isAuth,
+    upload.single("image"),
+    validateImageFile,
+    diagnoseInstant
+);
+
+// Single image prediction (background queue)
 ml_service_router.post(
     "/predict",
     otpLimiter,
@@ -15,9 +28,9 @@ ml_service_router.post(
     upload.single("image"),
     validateImageFile,
     uploadAndAnalyze
-)
+);
 
-// Multiple images prediction
+// Multiple images prediction (background queue)
 ml_service_router.post(
     "/predict-multiple",
     otpLimiter,
@@ -25,9 +38,6 @@ ml_service_router.post(
     upload.array("images", 5),
     validateImageFiles,
     uploadAndAnalyzeMultiple
-)
+);
 
-export default ml_service_router
-
-
-
+export default ml_service_router;

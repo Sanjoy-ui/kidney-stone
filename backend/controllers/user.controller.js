@@ -4,18 +4,27 @@ import User from "../model/user.model.js";
 import { responses, sendError, sendSuccess } from "../utils/response.js";
 
 
-export const getCurrentUser = async (req , res) => {
-        try {
-            const {userId } = req.userId;
-            const user = await User.findOne({userId})
-            if(!user){
-                return responses.NOT_FOUND(res , "User doesn't exist sign up first")
-            }
-            return sendSuccess(res , 200 , "User found " )
-        } catch (error) {
-            return sendError(res , 500 , error )
+export const getCurrentUser = async (req, res) => {
+    try {
+        const user = req.user || await User.findById(req.userId).select("-password -otpHash -otpExpiry");
+        if (!user) {
+            return responses.NOT_FOUND(res, "User not found. Please sign up or login.");
         }
-}
+        return res.status(200).json({
+            success: true,
+            user: {
+                userId: user._id,
+                email: user.email,
+                username: user.username,
+                photo_url: user.photo_url,
+                agreedToTerms: user.agreedToTerms,
+                isVerified: user.isVerified
+            }
+        });
+    } catch (error) {
+        return sendError(res, 500, error);
+    }
+};
 
 // --- The Formatter Function ---
 function formatDoctorResponse(prediction, rawConfidence) {

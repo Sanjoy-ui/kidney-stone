@@ -21,6 +21,12 @@ fi
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
+# Activate virtual environment if present
+if [ -d "venv" ]; then
+    echo -e "${GREEN}Activating virtual environment (venv)...${NC}"
+    source venv/bin/activate
+fi
+
 # Check if requirements are installed
 echo -e "${YELLOW}Checking dependencies...${NC}"
 python3 -c "import fastapi" 2>/dev/null || {

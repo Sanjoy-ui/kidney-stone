@@ -28,6 +28,14 @@ const userSchema = new mongoose.Schema({
         type :Boolean,
         default : false
     },
+    agreedToTerms: {
+        type: Boolean,
+        default: false,
+        required: true,
+    },
+    agreedToTermsAt: {
+        type: Date,
+    },
     otpHash : {
         type : String ,
     },
@@ -39,8 +47,11 @@ const userSchema = new mongoose.Schema({
     },
     resetPasswordExpiry:{
         type :Date
-    }
-
+    },
+    refreshToken: {
+        type: String,
+        default: null,
+    },
 }, {timeseries :true, timestamps:true})
 
 

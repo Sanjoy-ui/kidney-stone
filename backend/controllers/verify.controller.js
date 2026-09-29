@@ -2,7 +2,8 @@ import bcrypt from "bcryptjs";
 import User from "../model/user.model.js";
 import { success } from "zod";
 import jwt from "jsonwebtoken"
-import { generateToken } from "../config/token.js";
+import { generateTokens } from "../config/token.js";
+import { setAuthCookies } from "./auth.controller.js";
 import { sendMail } from "../utils/mail.auth.verify.js";
 
 export const verifyOtp = async (req , res) => {
@@ -31,31 +32,31 @@ export const verifyOtp = async (req , res) => {
             user.isVerified = true;
             user.otpHash = null;
             user.otpExpiry = null;
-            await user.save()
-
-            const token = await generateToken(user._id)
-            if(!token){
-                return res.json({
-                    success :true ,
-                    message : "token generate failed ."
-                })
+            const tokens = generateTokens(user._id, { email: user.email, username: user.username });
+            if (!tokens.accessToken || !tokens.refreshToken) {
+                return res.status(500).json({
+                    success: false,
+                    message: "Token generation failed."
+                });
             }
 
-            res.cookie("token" , token , {
-                httpOnly : true,
-                secure : true,
-                sameSite : "Strict",
-                maxAge : 7 * 24 * 60 * 60 * 1000
-            })
+            user.refreshToken = tokens.refreshToken;
+            await user.save();
 
-
-
+            setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
             return res.status(200).json({
-                success :true,
-                message : "account verified successfull.",
-                user
-            })
+                success: true,
+                message: "Account verified successfully.",
+                user: {
+                    userId: user._id,
+                    email: user.email,
+                    username: user.username,
+                    photo_url: user.photo_url
+                },
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken
+            });
 
 
         } catch (error) {

@@ -1,6 +1,123 @@
 import { Report } from "../model/report.model.js";
 import { reportQueue } from "../queue/report.queue.js";
 import { responses } from "../utils/response.js";
+import { predictImage } from "../services/ml.services.js";
+import { formatDoctorResponse } from "../utils/formater.js";
+import { uploadToCloudinaryAndCleanup } from "../config/cloudinary.js";
+import User from "../model/user.model.js";
+import fs from "fs";
+
+/**
+ * Real-time Instant Diagnosis
+ * 1. Takes uploaded scan image
+ * 2. Calls FastAPI AI model (MobileNetV2 CNN)
+ * 3. Backs up to Cloudinary and deletes from local server hard drive / uploads dir
+ * 4. Calculates comprehensive Patient Matrix and formatted clinical report
+ * 5. If authenticated, saves report in DB
+ */
+export const diagnoseInstant = async (req, res) => {
+    const startTime = Date.now();
+    let localFilePath = null;
+
+    try {
+        if (!req.file) {
+            return responses.BAD_REQUEST(res, "No scan image file uploaded");
+        }
+
+        localFilePath = req.file.path;
+
+        // Verify terms and privacy agreement for diagnostic image processing
+        if (req.body.agreedToTerms !== "true" && req.body.agreedToTerms !== true) {
+            if (fs.existsSync(localFilePath)) {
+                await fs.promises.unlink(localFilePath).catch(() => {});
+            }
+            return responses.BAD_REQUEST(res, "You must accept the diagnostic Terms of Use and Privacy Policy conditions to scan an image.");
+        }
+
+        // 1. Run real prediction via FastAPI model service
+        const mlResult = await predictImage(localFilePath);
+        if (!mlResult.success) {
+            // Clean up local file on error
+            if (fs.existsSync(localFilePath)) {
+                await fs.promises.unlink(localFilePath).catch(() => {});
+            }
+            return responses.SERVER_ERROR(res, mlResult.error || "Kidney stone model inference failed");
+        }
+
+        const prediction = mlResult.data.prediction;
+        const confidence = typeof prediction.confidence === "number" ? prediction.confidence : parseFloat(prediction.confidence);
+
+        // 2. Format clinical response and patient metrics
+        const doctorAnalysis = formatDoctorResponse(prediction);
+
+        // 3. Backup image to Cloudinary and immediately remove from server hard drive
+        let cloudResult = null;
+        try {
+            cloudResult = await uploadToCloudinaryAndCleanup(localFilePath, "kidney_scans");
+        } catch (cloudErr) {
+            console.warn("Cloudinary backup notice:", cloudErr.message);
+        }
+
+        const processingLatency = ((Date.now() - startTime) / 1000).toFixed(2) + "s";
+
+        // 4. If user is authenticated, persist report in MongoDB and ensure agreedToTerms is updated
+        let savedReportId = null;
+        if (req.userId) {
+            try {
+                await User.findByIdAndUpdate(req.userId, {
+                    agreedToTerms: true,
+                    agreedToTermsAt: new Date()
+                }).catch(() => {});
+
+                const report = await Report.create({
+                    userId: req.userId,
+                    fileUrl: cloudResult?.secure_url || "uploaded_scan",
+                    prediction: JSON.stringify(prediction),
+                    confidence: confidence,
+                    status: "completed"
+                });
+                savedReportId = report._id;
+            } catch (dbErr) {
+                console.warn("Notice: Failed to persist report in database:", dbErr.message);
+            }
+        }
+
+        const responseData = {
+            diagnosis: doctorAnalysis.diagnosis,
+            isStone: prediction.label === "Stone",
+            confidence: confidence,
+            severity: doctorAnalysis.severity,
+            summary: doctorAnalysis.summary,
+            findings: doctorAnalysis.findings,
+            recommendations: doctorAnalysis.recommendations,
+            precautions: doctorAnalysis.precautions,
+            imageUrl: cloudResult?.secure_url || null,
+            reportId: savedReportId,
+            metrics: {
+                detectionStatus: prediction.label === "Stone" ? "Positive (Stone Detected)" : "Negative (No Stone)",
+                confidenceScore: `${confidence.toFixed(1)}%`,
+                riskIndex: `${doctorAnalysis.severity} Severity`,
+                inferenceTime: processingLatency,
+                modelUsed: "MobileNetV2 (Fine-Tuned CNN)",
+                scanType: req.body?.scanType || "Ultrasound / CT Scan",
+                patientName: req.body?.patientName || "Anonymous Patient",
+                patientAge: req.body?.patientAge || "N/A",
+                timestamp: new Date().toISOString()
+            }
+        };
+
+        return responses.SUCCESS(res, "Scan analyzed successfully", responseData);
+
+    } catch (error) {
+        console.error("Instant Diagnosis Error:", error);
+        if (localFilePath && fs.existsSync(localFilePath)) {
+            try {
+                await fs.promises.unlink(localFilePath);
+            } catch (_) {}
+        }
+        return responses.SERVER_ERROR(res, "An error occurred during diagnosis processing");
+    }
+};
 
 export const uploadAndAnalyze = async (req, res) => {
     try {
