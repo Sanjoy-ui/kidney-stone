@@ -60,6 +60,31 @@ export const diagnoseInstant = async (req, res) => {
 
         const processingLatency = ((Date.now() - startTime) / 1000).toFixed(2) + "s";
 
+        const responseData = {
+            diagnosis: doctorAnalysis.diagnosis,
+            isStone: prediction.label === "Stone",
+            confidence: confidence,
+            severity: doctorAnalysis.severity,
+            summary: doctorAnalysis.summary,
+            findings: doctorAnalysis.findings,
+            recommendations: doctorAnalysis.recommendations,
+            precautions: doctorAnalysis.precautions,
+            imageUrl: cloudResult?.secure_url || null,
+            reportId: null,
+            metrics: {
+                detectionStatus: prediction.label === "Stone" ? "Positive (Stone Detected)" : "Negative (No Stone)",
+                confidenceScore: `${confidence.toFixed(1)}%`,
+                riskIndex: `${doctorAnalysis.severity} Severity`,
+                inferenceTime: processingLatency,
+                modelUsed: "MobileNetV2 (Fine-Tuned CNN)",
+                scanType: req.body?.scanType || "Ultrasound / CT Scan",
+                patientName: req.body?.patientName || "Anonymous Patient",
+                patientAge: req.body?.patientAge || "N/A",
+                patientGender: req.body?.patientGender || "Unspecified",
+                timestamp: new Date().toISOString()
+            }
+        };
+
         // 4. If user is authenticated, persist report in MongoDB and ensure agreedToTerms is updated
         let savedReportId = null;
         if (req.userId) {
@@ -74,39 +99,22 @@ export const diagnoseInstant = async (req, res) => {
                     fileUrl: cloudResult?.secure_url || "uploaded_scan",
                     prediction: JSON.stringify(prediction),
                     confidence: confidence,
-                    status: "completed"
+                    status: "completed",
+                    patientName: req.body?.patientName || "Anonymous Patient",
+                    patientAge: req.body?.patientAge || "N/A",
+                    patientGender: req.body?.patientGender || "Unspecified",
+                    scanType: req.body?.scanType || "Ultrasound / CT Scan",
+                    doctorAnalysis: doctorAnalysis,
+                    metrics: responseData.metrics
                 });
                 savedReportId = report._id;
+                responseData.reportId = savedReportId;
             } catch (dbErr) {
                 console.warn("Notice: Failed to persist report in database:", dbErr.message);
             }
         }
 
-        const responseData = {
-            diagnosis: doctorAnalysis.diagnosis,
-            isStone: prediction.label === "Stone",
-            confidence: confidence,
-            severity: doctorAnalysis.severity,
-            summary: doctorAnalysis.summary,
-            findings: doctorAnalysis.findings,
-            recommendations: doctorAnalysis.recommendations,
-            precautions: doctorAnalysis.precautions,
-            imageUrl: cloudResult?.secure_url || null,
-            reportId: savedReportId,
-            metrics: {
-                detectionStatus: prediction.label === "Stone" ? "Positive (Stone Detected)" : "Negative (No Stone)",
-                confidenceScore: `${confidence.toFixed(1)}%`,
-                riskIndex: `${doctorAnalysis.severity} Severity`,
-                inferenceTime: processingLatency,
-                modelUsed: "MobileNetV2 (Fine-Tuned CNN)",
-                scanType: req.body?.scanType || "Ultrasound / CT Scan",
-                patientName: req.body?.patientName || "Anonymous Patient",
-                patientAge: req.body?.patientAge || "N/A",
-                timestamp: new Date().toISOString()
-            }
-        };
-
-        return responses.SUCCESS(res, "Scan analyzed successfully", responseData);
+        return responses.OK(res, "Scan analyzed successfully", responseData);
 
     } catch (error) {
         console.error("Instant Diagnosis Error:", error);

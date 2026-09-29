@@ -16,6 +16,22 @@ const reportSchema = new mongoose.Schema({
     type: String,
     enum: ["pending", "completed", "failed"],
     default: "pending"
+  },
+  patientName: {
+    type: String,
+    default: "Patient"
+  },
+  patientAge: String,
+  patientGender: String,
+  scanType: {
+    type: String,
+    default: "Ultrasound / CT Scan"
+  },
+  doctorAnalysis: {
+    type: mongoose.Schema.Types.Mixed
+  },
+  metrics: {
+    type: mongoose.Schema.Types.Mixed
   }
 }, { timestamps: true });
 

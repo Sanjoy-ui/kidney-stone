@@ -32,6 +32,26 @@ function FontAwesomeIcon({
   return <i className={`fa-solid fa-${iconName} ${className}`} aria-hidden="true" />;
 }
 
+async function parseResponseJson(res: Response) {
+  try {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        success: false,
+        message: text || `Server error (${res.status})`,
+      };
+    }
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : "Failed to read server response";
+    return {
+      success: false,
+      message: err,
+    };
+  }
+}
+
 export default function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -83,7 +103,7 @@ export default function AuthCard({ initialMode = "login" }: AuthCardProps) {
           body: JSON.stringify({ email, password }),
         });
 
-        const data = await response.json();
+        const data = await parseResponseJson(response);
 
         if (!response.ok || !data.success) {
           throw new Error(data.message || "Invalid email or password.");
@@ -115,7 +135,7 @@ export default function AuthCard({ initialMode = "login" }: AuthCardProps) {
           }),
         });
 
-        const data = await response.json();
+        const data = await parseResponseJson(response);
 
         if (!response.ok || !data.success) {
           throw new Error(data.message || "Registration failed. Please check details.");
@@ -168,7 +188,7 @@ export default function AuthCard({ initialMode = "login" }: AuthCardProps) {
         }),
       });
 
-      const data = await response.json();
+      const data = await parseResponseJson(response);
 
       if (!response.ok || !data.success) {
         throw new Error(data.message || "Google authentication failed.");

@@ -1,5 +1,5 @@
 import Image from "next/image";
-import doctorImage from "@/public/Doctor Presenting medical data.png";
+import doctorImage from "@/public/Doctors-cuate.svg";
 
 export default function DoctorVisual() {
   return (

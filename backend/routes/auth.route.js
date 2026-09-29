@@ -1,5 +1,5 @@
 import express from "express";
-import { otpLimiter } from "../utils/ratelimit.js";
+import { otpLimiter, authLimiter } from "../utils/ratelimit.js";
 import {
     forgotPassword,
     getMe,
@@ -17,9 +17,9 @@ import { optionalValidateImageFile } from "../middlewares/fileValidator.js";
 
 const authRouter = express.Router();
 
-authRouter.post("/signup", otpLimiter, upload.single("image"), optionalValidateImageFile, registerUser);
-authRouter.post("/login", otpLimiter, loginUser);
-authRouter.post("/google", otpLimiter, googleAuthLogin);
+authRouter.post("/signup", authLimiter, upload.single("image"), optionalValidateImageFile, registerUser);
+authRouter.post("/login", authLimiter, loginUser);
+authRouter.post("/google", authLimiter, googleAuthLogin);
 
 // Refresh Token Endpoints (Access token renew via refresh token)
 authRouter.post("/refresh-token", refreshUserToken);

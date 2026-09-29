@@ -23,6 +23,7 @@ import {
   Sparkles,
   LogOut,
   User as UserIcon,
+  LayoutDashboard,
 } from "lucide-react";
 
 interface DiagnosisMetrics {
@@ -69,6 +70,54 @@ export default function DiagnosePage() {
       setPatientName(user.username);
     }
   }, [user, patientName]);
+
+  // Restore scan report after page refresh or load by reportId in URL
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const reportIdParam = urlParams.get("reportId");
+
+    if (reportIdParam) {
+      const loadReportFromApi = async () => {
+        try {
+          setLoading(true);
+          const res = await authFetch(`${BACKEND_URL}/api/v1/dashboard/report/${reportIdParam}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && json.data) {
+              setResult(json.data);
+              if (json.data.imageUrl) {
+                setPreviewUrl(json.data.imageUrl);
+              }
+              sessionStorage.setItem("currentScanReport", JSON.stringify(json.data));
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to load report from API:", e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadReportFromApi();
+      return;
+    }
+
+    // Fallback: check sessionStorage if user refreshed after scanning
+    const cached = sessionStorage.getItem("currentScanReport");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed?.diagnosis) {
+          setResult(parsed);
+          if (parsed.imageUrl) {
+            setPreviewUrl(parsed.imageUrl);
+          }
+        }
+      } catch (_) {}
+    }
+  }, [authFetch]);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +166,11 @@ export default function DiagnosePage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("currentScanReport");
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
+    }
   };
 
   const handleAnalyze = async () => {
@@ -154,6 +208,13 @@ export default function DiagnosePage() {
       }
 
       setResult(data.data);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("currentScanReport", JSON.stringify(data.data));
+        if (data.data.reportId) {
+          const newUrl = `${window.location.pathname}?reportId=${data.data.reportId}`;
+          window.history.replaceState({ path: newUrl }, "", newUrl);
+        }
+      }
     } catch (err: unknown) {
       console.error("Diagnosis request error:", err);
       const errorMessage =
@@ -192,7 +253,7 @@ export default function DiagnosePage() {
               />
             </Link>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 print:hidden">
               {user && (
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-[#90e0ef]/70 text-xs font-semibold text-[#03045e] shadow-xs">
                   <div className="w-5 h-5 rounded-full bg-[#caf0f8] text-[#0077b6] flex items-center justify-center font-bold text-[10px]">
@@ -201,6 +262,14 @@ export default function DiagnosePage() {
                   <span className="truncate max-w-[130px]">{user.username}</span>
                 </div>
               )}
+
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#0077b6] hover:text-[#03045e] transition-colors px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg hover:bg-[#caf0f8]/40"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span>Dashboard</span>
+              </Link>
 
               <button
                 type="button"
@@ -663,7 +732,7 @@ export default function DiagnosePage() {
             </div>
 
             {/* Bottom Action Toolbar */}
-            <div className="pt-4 sm:pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+            <div className="pt-4 sm:pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 print:hidden">
               <button
                 type="button"
                 onClick={resetForm}
@@ -673,14 +742,24 @@ export default function DiagnosePage() {
                 <span>Analyze Another Scan</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="btn-primary text-xs sm:text-sm px-6 py-2.5 sm:py-3 rounded-full flex items-center gap-2 w-full sm:w-auto justify-center"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print Clinical Report</span>
-              </button>
+              <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <Link
+                  href="/dashboard"
+                  className="btn-ghost text-xs sm:text-sm px-4 sm:px-5 py-2.5 sm:py-3 rounded-full flex items-center gap-2 w-full sm:w-auto justify-center"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span>Patient Dashboard</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="btn-primary text-xs sm:text-sm px-5 sm:px-6 py-2.5 sm:py-3 rounded-full flex items-center gap-2 w-full sm:w-auto justify-center"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Clinical Report</span>
+                </button>
+              </div>
             </div>
 
           </div>

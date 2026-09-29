@@ -131,3 +131,20 @@
 .animate-meteor-effect {
   animation: meteor 5s linear infinite;
 }
+
+/* Print Optimization for Clinical Reports */
+@media print {
+  .print\:hidden {
+    display: none !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+  }
+
+  .med-card,
+  header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

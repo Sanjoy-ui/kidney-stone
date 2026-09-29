@@ -1,9 +1,7 @@
 import mongoose from "mongoose"
 import { Report } from "../model/report.model.js"
-import { formatDashboardResponse, formatPdfResponse } from "../utils/formater.js";
-
-
-
+import { formatDashboardResponse, formatPdfResponse, formatDoctorResponse } from "../utils/formater.js";
+import { responses } from "../utils/response.js";
 import PDFDocument from "pdfkit";
 
 
@@ -126,10 +124,10 @@ export const getDashboardData = async (req, res) => {
                             }
                         }
                     ],
-                    // Part B: Get Recent Reports
+                    // Part B: Get Recent Reports (Up to 30 past scans)
                     recentReports: [
                         { $sort: { createdAt: -1 } },
-                        { $limit: 5 },
+                        { $limit: 30 },
                         {
                             $project: {
                                 _id: 1,
@@ -137,7 +135,13 @@ export const getDashboardData = async (req, res) => {
                                 prediction: 1,
                                 confidence: 1,
                                 createdAt: 1,
-                                fileUrl: 1
+                                fileUrl: 1,
+                                patientName: 1,
+                                patientAge: 1,
+                                patientGender: 1,
+                                scanType: 1,
+                                doctorAnalysis: 1,
+                                metrics: 1
                             }
                         }
                     ]
@@ -147,11 +151,20 @@ export const getDashboardData = async (req, res) => {
 
         const result = dashboardData[0];
         
-        // Format the recent reports using your Doctor Formatter
-        const formattedReports = result.recentReports.map(report => ({
-            ...report,
-            analysis: formatDashboardResponse(report.prediction, report.confidence)
-        }));
+        // Format the recent reports using Doctor Formatter or stored analysis
+        const formattedReports = result.recentReports.map(report => {
+            const analysis = report.doctorAnalysis || formatDashboardResponse(report.prediction, report.confidence);
+            let parsedPrediction = null;
+            try {
+                parsedPrediction = typeof report.prediction === "string" ? JSON.parse(report.prediction) : report.prediction;
+            } catch (_) {}
+
+            return {
+                ...report,
+                isStone: parsedPrediction ? parsedPrediction.label === "Stone" : (analysis?.diagnosis?.toLowerCase().includes("detected") ?? false),
+                analysis: analysis
+            };
+        });
 
         return res.status(200).json({
             success: true,
@@ -162,5 +175,69 @@ export const getDashboardData = async (req, res) => {
     } catch (error) {
         console.error("Dashboard Error:", error);
         return res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+/**
+ * Get single clinical report by ID (for re-opening or sharing in patient dashboard)
+ */
+export const getReportById = async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(reportId)) {
+            return responses.BAD_REQUEST(res, "Invalid report ID format");
+        }
+
+        const report = await Report.findOne({
+            _id: new mongoose.Types.ObjectId(reportId),
+            userId: new mongoose.Types.ObjectId(req.userId)
+        });
+
+        if (!report) {
+            return responses.NOT_FOUND(res, "Clinical report not found");
+        }
+
+        let prediction = null;
+        try {
+            prediction = typeof report.prediction === "string" ? JSON.parse(report.prediction) : report.prediction;
+        } catch (_) {}
+
+        const doctorAnalysis = report.doctorAnalysis || (prediction ? formatDoctorResponse(prediction) : null);
+        const isStone = prediction ? prediction.label === "Stone" : (doctorAnalysis?.diagnosis?.toLowerCase().includes("detected") ?? false);
+        const confidence = typeof report.confidence === "number" ? report.confidence : (prediction?.confidence || 0);
+
+        const responseData = {
+            diagnosis: doctorAnalysis?.diagnosis || (isStone ? "Kidney stone detected" : "No kidney stone detected"),
+            isStone: isStone,
+            confidence: confidence,
+            severity: doctorAnalysis?.severity || (isStone ? "High" : "None"),
+            summary: doctorAnalysis?.summary || "Clinical analysis of renal scan.",
+            findings: doctorAnalysis?.findings || [],
+            recommendations: doctorAnalysis?.recommendations || [],
+            precautions: doctorAnalysis?.precautions || [
+                "This AI result is not a medical diagnosis",
+                "Consult a certified doctor for confirmation"
+            ],
+            imageUrl: report.fileUrl?.startsWith("http") ? report.fileUrl : null,
+            reportId: report._id,
+            createdAt: report.createdAt,
+            metrics: report.metrics || {
+                detectionStatus: isStone ? "Positive (Stone Detected)" : "Negative (No Stone)",
+                confidenceScore: `${confidence.toFixed(1)}%`,
+                riskIndex: `${doctorAnalysis?.severity || "Standard"} Severity`,
+                inferenceTime: "Archived Report",
+                modelUsed: "MobileNetV2 (Fine-Tuned CNN)",
+                scanType: report.scanType || "Ultrasound / CT Scan",
+                patientName: report.patientName || "Patient",
+                patientAge: report.patientAge || "N/A",
+                timestamp: report.createdAt
+            }
+        };
+
+        return responses.OK(res, "Report fetched successfully", responseData);
+
+    } catch (error) {
+        console.error("Get Report Error:", error);
+        return responses.SERVER_ERROR(res, "Failed to load clinical report");
     }
 };

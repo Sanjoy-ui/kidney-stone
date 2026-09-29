@@ -3,7 +3,7 @@
 import { ArrowRight, CheckCircle2, Stethoscope } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import doctorImage from "@/public/Doctor Presenting medical data.png";
+import doctorImage from "@/public/Doctors-cuate.svg";
 import { useAuth } from "../context/AuthContext";
 
 export default function HeroSection() {

@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: "NephroScan AI — Medical Diagnostic Center",
   description:
     "AI-powered kidney stone detection and medical diagnostic platform. Fast, validated diagnosis and structured clinical reports in under 2 seconds.",
+  icons: {
+    icon: "/mainLogo.png",
+    shortcut: "/mainLogo.png",
+    apple: "/mainLogo.png",
+  },
 };
 
 export default function RootLayout({
@@ -16,6 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="icon" href="/mainLogo.png" />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css"

@@ -28,6 +28,7 @@ export const responses = {
     // 2xx Success
     CREATED: (res, data = null) => sendSuccess(res, 201, "Created successfully", data),
     OK: (res, message = "Success", data = null) => sendSuccess(res, 200, message, data),
+    SUCCESS: (res, message = "Success", data = null) => sendSuccess(res, 200, message, data),
     ACCEPTED: (res, message = "Request accepted", data = null) => sendSuccess(res, 202, message, data),
 
     // 4xx Client Errors

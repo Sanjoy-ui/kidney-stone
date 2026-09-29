@@ -3,8 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Check } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 export default function PricingSection() {
+  const { user } = useAuth();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
 
   const plans = [
@@ -16,7 +18,7 @@ export default function PricingSection() {
       period: "/ Month",
       billingNote: billingCycle === "yearly" ? "Billed annually (₹1,908/yr)" : "Billed monthly",
       buttonText: "Start a free trial",
-      buttonHref: "/register?plan=hobby",
+      buttonHref: user ? "/diagnose?plan=hobby" : "/register?plan=hobby",
       isPopular: false,
       includesTitle: "HOBBY PLAN INCLUDES",
       features: [
@@ -36,7 +38,7 @@ export default function PricingSection() {
       period: "/ Month",
       billingNote: billingCycle === "yearly" ? "Billed annually (₹4,788/yr)" : "Billed monthly",
       buttonText: "Get started",
-      buttonHref: "/register?plan=pro",
+      buttonHref: user ? "/diagnose?plan=pro" : "/register?plan=pro",
       isPopular: true,
       includesTitle: "PRO PLAN INCLUDES",
       features: [
@@ -52,11 +54,11 @@ export default function PricingSection() {
       id: "enterprise",
       name: "Enterprise",
       description: "For multi-specialty hospitals, healthcare networks & diagnostic labs.",
-      price: billingCycle === "monthly" ? "69" : "690",
-      period: billingCycle === "monthly" ? "/ Month" : "/ Year",
-      billingNote: billingCycle === "yearly" ? "Annual institution license" : "Billed monthly per site",
-      buttonText: "Contact sales",
-      buttonHref: "mailto:contact@nephroscan.ai?subject=Enterprise%20Inquiry",
+      price: billingCycle === "monthly" ? "1,499" : "1,199",
+      period: "/ Month",
+      billingNote: billingCycle === "yearly" ? "Billed annually (₹14,388/yr)" : "Billed monthly per site",
+      buttonText: "Get started",
+      buttonHref: user ? "/diagnose?plan=enterprise" : "/register?plan=enterprise",
       isPopular: false,
       includesTitle: "ENTERPRISE PLAN INCLUDES",
       features: [
