@@ -71,6 +71,9 @@ async def predict(file: UploadFile = File(...)):
     - label: 'Stone' or 'No Stone'
     - probability: Raw probability value (0-1)
     - confidence: Confidence percentage (0-100)
+    - heatmap_overlay: Base64 data URL of Grad-CAM attention heatmap overlay
+    - raw_heatmap: Base64 data URL of raw Jet colormap
+    - gradcam_layer: Last convolutional layer utilized (e.g. out_relu)
     """
 
     if detector is None:
@@ -94,8 +97,8 @@ async def predict(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, tmp_file)
             temp_path = tmp_file.name
 
-        # Make prediction
-        result = detector.predict(temp_path)
+        # Make prediction with Grad-CAM visualization
+        result = detector.predict(temp_path, include_gradcam=True)
 
         # Clean up temporary file
         Path(temp_path).unlink()
@@ -107,6 +110,8 @@ async def predict(file: UploadFile = File(...)):
                 detail=f"Prediction error: {result['error']}"
             )
 
+        gradcam_info = result.get('gradcam', {})
+
         return JSONResponse(
             status_code=200,
             content={
@@ -114,7 +119,11 @@ async def predict(file: UploadFile = File(...)):
                 "prediction": {
                     "label": result['label'],
                     "probability": result['probability'],
-                    "confidence": result['confidence']
+                    "confidence": result['confidence'],
+                    "heatmap_overlay": gradcam_info.get("overlay_image"),
+                    "raw_heatmap": gradcam_info.get("raw_heatmap"),
+                    "gradcam_layer": gradcam_info.get("layer_used"),
+                    "gradcam_success": gradcam_info.get("success", False)
                 },
                 "timestamp": datetime.now().isoformat()
             }

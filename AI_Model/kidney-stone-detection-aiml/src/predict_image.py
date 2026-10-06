@@ -41,8 +41,8 @@ class KidneyStoneDetector:
         
         return img_array
     
-    def predict(self, img_path):
-        """Make a prediction on a single image."""
+    def predict(self, img_path, include_gradcam=False):
+        """Make a prediction on a single image, optionally with Grad-CAM visualization."""
         try:
             # Preprocess the image
             processed_img = self.preprocess_image(img_path)
@@ -59,11 +59,21 @@ class KidneyStoneDetector:
                 label = self.class_names[0]  # No Stone
                 confidence = 1.0 - probability
             
-            return {
+            result = {
                 'label': label,
                 'probability': float(probability),
                 'confidence': float(confidence) * 100  # as percentage
             }
+
+            if include_gradcam:
+                try:
+                    from gradcam import generate_gradcam_overlay
+                    gradcam_data = generate_gradcam_overlay(self.model, img_path)
+                    result['gradcam'] = gradcam_data
+                except Exception as g_err:
+                    result['gradcam'] = {'success': False, 'error': str(g_err)}
+
+            return result
             
         except Exception as e:
             return {

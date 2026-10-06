@@ -4,6 +4,7 @@ import { isAuth, optionalAuth } from "../middlewares/isAuth.js";
 import { upload } from "../middlewares/multer.middleware.js";
 import {
     diagnoseInstant,
+    diagnoseBatchInstant,
     uploadAndAnalyze,
     uploadAndAnalyzeMultiple
 } from "../controllers/ml_service.controller.js";
@@ -11,13 +12,22 @@ import { validateImageFile, validateImageFiles } from "../middlewares/fileValida
 
 const ml_service_router = express.Router();
 
-// Real-time Instant Diagnosis (protected: requires logged-in user with valid token)
+// Real-time Instant Diagnosis (single scan)
 ml_service_router.post(
     "/diagnose",
     isAuth,
     upload.single("image"),
     validateImageFile,
     diagnoseInstant
+);
+
+// Real-time Multi-Slice Instant Batch Diagnosis (2-6 slices)
+ml_service_router.post(
+    "/diagnose-batch",
+    isAuth,
+    upload.array("images", 6),
+    validateImageFiles,
+    diagnoseBatchInstant
 );
 
 // Single image prediction (background queue)

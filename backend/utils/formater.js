@@ -6,13 +6,20 @@ import mongoose from "mongoose";
 export function formatDoctorResponse(prediction) {
     if (!prediction) return null;
 
-    const parsed =
-        typeof prediction === "string"
-            ? JSON.parse(prediction)
-            : prediction;
+    let parsed = null;
+    if (typeof prediction === "object" && prediction !== null) {
+        parsed = prediction;
+    } else if (typeof prediction === "string") {
+        try {
+            parsed = JSON.parse(prediction);
+        } catch (_) {
+            const isStoneText = prediction.toLowerCase().includes("stone") || prediction.toLowerCase().includes("positive") || prediction.toLowerCase().includes("detected");
+            parsed = { label: isStoneText ? "Stone" : "Normal", confidence: 95 };
+        }
+    }
 
-    const { label, confidence } = parsed;
-
+    const label = parsed?.label || "Unknown";
+    const confidence = typeof parsed?.confidence === "number" ? parsed.confidence : 0;
     const isStone = label === "Stone";
 
     return {
@@ -64,20 +71,24 @@ export function formatDoctorResponse(prediction) {
 
 
 export const formatPdfResponse = (prediction, rawConfidence) => {
-    // 1. Handle empty cases (though PDFs usually aren't generated until 'completed')
     if (!prediction || prediction === "null") return null;
 
-    let parsed;
-    try {
-        parsed = typeof prediction === "string" ? JSON.parse(prediction) : prediction;
-    } catch (e) {
-        console.error("PDF Formatting Error:", e);
-        return null;
+    let parsed = null;
+    if (typeof prediction === "object" && prediction !== null) {
+        parsed = prediction;
+    } else if (typeof prediction === "string") {
+        try {
+            parsed = JSON.parse(prediction);
+        } catch (_) {
+            const isStoneText = prediction.toLowerCase().includes("stone") || prediction.toLowerCase().includes("positive") || prediction.toLowerCase().includes("detected");
+            const confVal = typeof rawConfidence === "number" ? rawConfidence : parseFloat(rawConfidence) || 95;
+            parsed = { label: isStoneText ? "Stone" : "Normal", confidence: confVal };
+        }
     }
 
     const label = parsed?.label || "Unknown";
-    const confidence = parsed?.confidence || rawConfidence || 0;
-    const isStone = label === "Stone";
+    const confidence = typeof parsed?.confidence === "number" ? parsed.confidence : (typeof rawConfidence === "number" ? rawConfidence : parseFloat(rawConfidence) || 0);
+    const isStone = label === "Stone" || String(label).toLowerCase().includes("stone");
 
     return {
         // Formal wording for the report header

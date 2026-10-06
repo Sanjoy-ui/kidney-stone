@@ -6,6 +6,9 @@ import Image from "next/image";
 import { FileUpload } from "@/app/components/ui/fileupload";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { useAuth } from "../context/AuthContext";
+import RadiologyViewer from "../components/RadiologyViewer";
+import PreventiveCareCard from "../components/PreventiveCareCard";
+import { ClinicalRiskProfile } from "../utils/clinicalRiskEngine";
 import {
   Activity,
   ArrowLeft,
@@ -24,6 +27,13 @@ import {
   LogOut,
   User as UserIcon,
   LayoutDashboard,
+  Eye,
+  Layers,
+  Download,
+  Loader2,
+  Plus,
+  Trash2,
+  Film,
 } from "lucide-react";
 
 interface DiagnosisMetrics {
@@ -35,7 +45,21 @@ interface DiagnosisMetrics {
   scanType: string;
   patientName: string;
   patientAge: string;
+  patientGender?: string;
   timestamp: string;
+}
+
+interface SliceResult {
+  sliceIndex: number;
+  originalName: string;
+  isStone: boolean;
+  label: string;
+  confidence: number;
+  imageUrl: string | null;
+  heatmapOverlay?: string | null;
+  rawHeatmap?: string | null;
+  gradcamLayer?: string | null;
+  reportId?: string | null;
 }
 
 interface DiagnosisResult {
@@ -48,8 +72,17 @@ interface DiagnosisResult {
   recommendations: string[];
   precautions: string[];
   imageUrl: string | null;
+  heatmapOverlay?: string | null;
+  rawHeatmap?: string | null;
+  gradcamLayer?: string | null;
   reportId: string | null;
   metrics: DiagnosisMetrics;
+  isBatch?: boolean;
+  totalSlices?: number;
+  positiveCount?: number;
+  negativeCount?: number;
+  slices?: SliceResult[];
+  clinicalRisk?: ClinicalRiskProfile;
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5876";
@@ -58,6 +91,10 @@ export default function DiagnosePage() {
   const { user, authFetch, logout } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isMultiSlice, setIsMultiSlice] = useState<boolean>(false);
+  const [batchFiles, setBatchFiles] = useState<File[]>([]);
+  const [batchPreviews, setBatchPreviews] = useState<string[]>([]);
+  const [selectedBatchIndex, setSelectedBatchIndex] = useState<number>(0);
   const [scanType, setScanType] = useState<string>("Ultrasound");
   const [patientName, setPatientName] = useState<string>("");
   const [patientAge, setPatientAge] = useState<string>("");
@@ -122,8 +159,40 @@ export default function DiagnosePage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DiagnosisResult | null>(null);
+  const [visualMode, setVisualMode] = useState<"gradcam" | "original" | "split">("gradcam");
+  const [downloadingPdf, setDownloadingPdf] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const batchFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleBatchFilesSelect = (newFiles: FileList | File[]) => {
+    const fileArray = Array.from(newFiles);
+    const validImages = fileArray.filter((f) => f.type.startsWith("image/"));
+    if (validImages.length === 0) {
+      setError("Please select valid image files (JPG, PNG).");
+      return;
+    }
+    const totalCount = batchFiles.length + validImages.length;
+    if (totalCount > 6) {
+      setError("A maximum of 6 scan slices is permitted per multi-slice study.");
+      return;
+    }
+    setError(null);
+    const combinedFiles = [...batchFiles, ...validImages].slice(0, 6);
+    setBatchFiles(combinedFiles);
+    const previews = combinedFiles.map((f) => URL.createObjectURL(f));
+    setBatchPreviews(previews);
+  };
+
+  const removeBatchFile = (index: number) => {
+    const updatedFiles = batchFiles.filter((_, i) => i !== index);
+    setBatchFiles(updatedFiles);
+    const previews = updatedFiles.map((f) => URL.createObjectURL(f));
+    setBatchPreviews(previews);
+    if (selectedBatchIndex >= updatedFiles.length) {
+      setSelectedBatchIndex(Math.max(0, updatedFiles.length - 1));
+    }
+  };
 
   const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile.type.startsWith("image/")) {
@@ -161,10 +230,17 @@ export default function DiagnosePage() {
   const resetForm = () => {
     setFile(null);
     setPreviewUrl(null);
+    setBatchFiles([]);
+    setBatchPreviews([]);
+    setSelectedBatchIndex(0);
     setResult(null);
     setError(null);
+    setVisualMode("gradcam");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+    if (batchFileInputRef.current) {
+      batchFileInputRef.current.value = "";
     }
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("currentScanReport");
@@ -174,9 +250,16 @@ export default function DiagnosePage() {
   };
 
   const handleAnalyze = async () => {
-    if (!file) {
-      setError("Please upload an ultrasound or CT scan image to analyze.");
-      return;
+    if (isMultiSlice) {
+      if (batchFiles.length < 2) {
+        setError("Please upload at least 2 scan slices (max 6) for a multi-slice study.");
+        return;
+      }
+    } else {
+      if (!file) {
+        setError("Please upload an ultrasound or CT scan image to analyze.");
+        return;
+      }
     }
 
     if (!agreedToTerms) {
@@ -188,7 +271,14 @@ export default function DiagnosePage() {
     setError(null);
 
     const formData = new FormData();
-    formData.append("image", file);
+    if (isMultiSlice) {
+      batchFiles.forEach((bf) => {
+        formData.append("images", bf);
+      });
+    } else if (file) {
+      formData.append("image", file);
+    }
+
     formData.append("scanType", scanType);
     formData.append("agreedToTerms", "true");
     if (patientName.trim()) formData.append("patientName", patientName.trim());
@@ -196,7 +286,11 @@ export default function DiagnosePage() {
     formData.append("patientGender", patientGender);
 
     try {
-      const response = await authFetch(`${BACKEND_URL}/api/v1/user/diagnose`, {
+      const endpoint = isMultiSlice
+        ? `${BACKEND_URL}/api/v1/user/diagnose-batch`
+        : `${BACKEND_URL}/api/v1/user/diagnose`;
+
+      const response = await authFetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -208,6 +302,7 @@ export default function DiagnosePage() {
       }
 
       setResult(data.data);
+      setSelectedBatchIndex(0);
       if (typeof window !== "undefined") {
         sessionStorage.setItem("currentScanReport", JSON.stringify(data.data));
         if (data.data.reportId) {
@@ -229,6 +324,39 @@ export default function DiagnosePage() {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!result?.reportId) {
+      alert("No report identifier found to generate official PDF.");
+      return;
+    }
+    setDownloadingPdf(true);
+    try {
+      const res = await authFetch(
+        `${BACKEND_URL}/api/v1/dashboard/download-report/${result.reportId}`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `NephroScan_Report_${result.reportId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+      } else {
+        const errJson = await res.json().catch(() => null);
+        alert(errJson?.message || "Could not generate clinical report PDF. Please try again.");
+      }
+    } catch (err) {
+      console.error("PDF download error:", err);
+      alert("Failed to download official clinical report PDF.");
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   return (
@@ -324,56 +452,192 @@ export default function DiagnosePage() {
             
             {/* Left Column: Image Dropzone & Preview (7 Cols) */}
             <div className="lg:col-span-7 med-card p-4 sm:p-6 lg:p-8 bg-white flex flex-col gap-4 sm:gap-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-[#03045e]">1. Upload Renal Scan</h2>
-                <span className="text-[11px] sm:text-xs font-semibold text-slate-400">JPG, PNG (Max 10MB)</span>
+                {/* Single vs Multi-Slice Toggle */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMultiSlice(false);
+                      setBatchFiles([]);
+                      setBatchPreviews([]);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      !isMultiSlice
+                        ? "bg-white text-[#0077b6] shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Single Scan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMultiSlice(true);
+                      setFile(null);
+                      setPreviewUrl(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      isMultiSlice
+                        ? "bg-[#0077b6] text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Multi-Slice Study (2-6)</span>
+                  </button>
+                </div>
               </div>
 
-              {!previewUrl ? (
-                /* Aceternity FileUpload Dropzone */
-                <div className="w-full border-2 border-dashed border-[#90e0ef] hover:border-[#0077b6] rounded-2xl bg-white transition-all overflow-hidden shadow-xs group">
-                  <FileUpload
-                    accept="image/jpeg,image/png,image/jpg"
-                    title="Drag & Drop Scan File"
-                    description="Upload DICOM slice, CT scan, ultrasound, or X-ray radiograph (up to 10MB)"
-                    onChange={(uploadedFiles) => {
-                      if (uploadedFiles && uploadedFiles[0]) {
-                        handleFileSelect(uploadedFiles[0]);
-                      }
-                    }}
-                  />
-                  <div className="flex items-center justify-between px-5 py-3 bg-[#f8fafc] border-t border-slate-200/80 text-[11px] sm:text-xs text-slate-500">
-                    <span className="flex items-center gap-1.5 font-medium text-[#03045e]">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      HIPAA-Safe & End-to-End Encrypted
-                    </span>
-                    <span className="text-slate-400 font-medium">
-                      CT &bull; Ultrasound &bull; X-Ray
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                /* Preview Container */
-                <div className="relative w-full rounded-2xl overflow-hidden border border-[#90e0ef] bg-slate-900 flex flex-col items-center justify-center p-2">
-                  <div className="relative w-full h-64 sm:h-80 flex items-center justify-center">
-                    <img
-                      src={previewUrl}
-                      alt="Uploaded Scan Preview"
-                      className="max-h-full max-w-full object-contain rounded-lg"
+              {!isMultiSlice ? (
+                /* Single Scan Mode Dropzone & Preview */
+                !previewUrl ? (
+                  <div className="w-full border-2 border-dashed border-[#90e0ef] hover:border-[#0077b6] rounded-2xl bg-white transition-all overflow-hidden shadow-xs group">
+                    <FileUpload
+                      accept="image/jpeg,image/png,image/jpg"
+                      title="Drag & Drop Scan File"
+                      description="Upload DICOM slice, CT scan, ultrasound, or X-ray radiograph (up to 10MB)"
+                      onChange={(uploadedFiles) => {
+                        if (uploadedFiles && uploadedFiles[0]) {
+                          handleFileSelect(uploadedFiles[0]);
+                        }
+                      }}
                     />
+                    <div className="flex items-center justify-between px-5 py-3 bg-[#f8fafc] border-t border-slate-200/80 text-[11px] sm:text-xs text-slate-500">
+                      <span className="flex items-center gap-1.5 font-medium text-[#03045e]">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        HIPAA-Safe & End-to-End Encrypted
+                      </span>
+                      <span className="text-slate-400 font-medium">
+                        CT &bull; Ultrasound &bull; X-Ray
+                      </span>
+                    </div>
                   </div>
-                  <div className="w-full bg-white/95 backdrop-blur-md rounded-xl p-2.5 sm:p-3 mt-2 flex items-center justify-between border border-slate-200 text-xs">
-                    <span className="font-semibold text-[#03045e] truncate max-w-[180px] sm:max-w-[240px]">
-                      {file?.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="text-rose-600 hover:text-rose-800 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors"
+                ) : (
+                  <div className="relative w-full rounded-2xl overflow-hidden border border-[#90e0ef] bg-white flex flex-col p-2.5 gap-2.5 shadow-sm">
+                    <RadiologyViewer
+                      imageUrl={previewUrl}
+                      alt={file?.name || "Uploaded Scan Preview"}
+                    />
+                    <div className="w-full bg-slate-50 rounded-xl p-2.5 sm:p-3 flex items-center justify-between border border-slate-200 text-xs">
+                      <span className="font-semibold text-[#03045e] truncate max-w-[180px] sm:max-w-[240px]">
+                        {file?.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={resetForm}
+                        className="text-rose-600 hover:text-rose-800 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                )
+              ) : (
+                /* Multi-Slice Study Mode Dropzone & Gallery */
+                <div className="flex flex-col gap-3">
+                  {batchFiles.length === 0 ? (
+                    <div
+                      onClick={() => batchFileInputRef.current?.click()}
+                      onDragOver={onDragOver}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files) {
+                          handleBatchFilesSelect(e.dataTransfer.files);
+                        }
+                      }}
+                      className="w-full border-2 border-dashed border-[#90e0ef] hover:border-[#0077b6] rounded-2xl bg-white transition-all p-8 flex flex-col items-center justify-center gap-3 cursor-pointer group shadow-xs"
                     >
-                      Remove
-                    </button>
-                  </div>
+                      <div className="w-12 h-12 rounded-2xl bg-[#caf0f8] text-[#0077b6] flex items-center justify-center transition-transform group-hover:scale-110">
+                        <Layers className="w-6 h-6" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm sm:text-base font-bold text-[#03045e]">
+                          Click or Drag to Upload 2 to 6 Scan Slices
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                          Select transverse, sagittal, and bilateral kidney ultrasound slices for cross-slice verification.
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#caf0f8]/60 text-[#0077b6] border border-[#90e0ef]">
+                        Multi-Slice Mode Active
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {/* Slices Thumbnail Strip */}
+                      <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#03045e]">
+                            Study Slices ({batchFiles.length} / 6 Selected)
+                          </span>
+                          {batchFiles.length < 6 && (
+                            <button
+                              type="button"
+                              onClick={() => batchFileInputRef.current?.click()}
+                              className="text-xs font-bold text-[#0077b6] hover:underline flex items-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add Slice</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                          {batchFiles.map((bf, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setSelectedBatchIndex(idx)}
+                              className={`p-1.5 rounded-xl border text-center cursor-pointer transition-all relative ${
+                                selectedBatchIndex === idx
+                                  ? "border-[#0077b6] bg-[#caf0f8]/40 ring-2 ring-[#0077b6]/20"
+                                  : "border-slate-200 bg-white hover:bg-slate-50"
+                              }`}
+                            >
+                              <div className="w-full h-14 rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center">
+                                <img
+                                  src={batchPreviews[idx]}
+                                  alt={`Slice ${idx + 1}`}
+                                  className="max-h-full max-w-full object-contain"
+                                />
+                              </div>
+                              <span className="text-[10px] font-bold text-[#03045e] block truncate mt-1">
+                                Slice #{idx + 1}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeBatchFile(idx);
+                                }}
+                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700"
+                                title="Remove slice"
+                              >
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Focused Slice Preview with Radiology Tools */}
+                      {batchPreviews[selectedBatchIndex] && (
+                        <div className="relative w-full rounded-2xl overflow-hidden border border-[#90e0ef] bg-white flex flex-col p-2.5 gap-2.5 shadow-sm">
+                          <div className="flex items-center justify-between text-xs font-bold text-[#03045e] px-1">
+                            <span>Inspecting Slice #{selectedBatchIndex + 1}</span>
+                            <span className="text-slate-400 font-mono text-[11px]">
+                              {batchFiles[selectedBatchIndex]?.name}
+                            </span>
+                          </div>
+                          <RadiologyViewer
+                            imageUrl={batchPreviews[selectedBatchIndex]}
+                            alt={batchFiles[selectedBatchIndex]?.name || `Slice ${selectedBatchIndex + 1}`}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -383,6 +647,14 @@ export default function DiagnosePage() {
                 accept="image/jpeg,image/png,image/jpg"
                 className="hidden"
                 onChange={onFileInputChange}
+              />
+              <input
+                ref={batchFileInputRef}
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/jpg"
+                className="hidden"
+                onChange={(e) => e.target.files && handleBatchFilesSelect(e.target.files)}
               />
             </div>
 
@@ -499,9 +771,13 @@ export default function DiagnosePage() {
                 <button
                   type="button"
                   onClick={handleAnalyze}
-                  disabled={!file || loading || !agreedToTerms}
+                  disabled={
+                    isMultiSlice
+                      ? batchFiles.length < 2 || loading || !agreedToTerms
+                      : !file || loading || !agreedToTerms
+                  }
                   className={`w-full py-3.5 sm:py-4 rounded-full font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-md mt-1 ${
-                    !file || loading || !agreedToTerms
+                    (isMultiSlice ? batchFiles.length < 2 : !file) || loading || !agreedToTerms
                       ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                       : "btn-primary shadow-[#0077b6]/25"
                   }`}
@@ -509,12 +785,16 @@ export default function DiagnosePage() {
                   {loading ? (
                     <>
                       <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Analyzing Scan...</span>
+                      <span>{isMultiSlice ? `Analyzing ${batchFiles.length} Slices with AI...` : "Analyzing Scan..."}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
-                      <span>Analyze Scan with AI</span>
+                      <span>
+                        {isMultiSlice
+                          ? `Analyze Multi-Slice Study (${batchFiles.length} Slices)`
+                          : "Analyze Scan with AI"}
+                      </span>
                     </>
                   )}
                 </button>
@@ -657,22 +937,124 @@ export default function DiagnosePage() {
               </div>
             </div>
 
+            {/* Multi-Slice Study Gallery Card */}
+            {result.isBatch && result.slices && result.slices.length > 0 && (
+              <div className="med-card p-4 sm:p-6 bg-white border border-[#90e0ef]/70 flex flex-col gap-3 shadow-xs">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Film className="w-4 h-4 text-[#0077b6]" />
+                    <h3 className="text-sm sm:text-base font-bold text-[#03045e]">
+                      Multi-Slice Study Gallery ({result.slices.length} Planes Analyzed)
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500">
+                      Cross-Slice Verdict:
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">
+                      {result.positiveCount} Positive
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                      {result.negativeCount} Negative
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 pt-1">
+                  {result.slices.map((slice, idx) => {
+                    const isSelected = selectedBatchIndex === idx;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedBatchIndex(idx)}
+                        className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-1.5 relative ${
+                          isSelected
+                            ? "border-[#0077b6] bg-[#caf0f8]/30 ring-2 ring-[#0077b6]/20 shadow-xs"
+                            : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                        }`}
+                      >
+                        <div className="relative w-full h-20 rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center">
+                          <img
+                            src={slice.imageUrl || ""}
+                            alt={`Slice ${slice.sliceIndex}`}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                          {slice.isStone && (
+                            <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-600 ring-2 ring-white" />
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] font-bold">
+                          <span className="text-[#03045e]">Slice #{slice.sliceIndex}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
+                              slice.isStone
+                                ? "bg-rose-100 text-rose-700"
+                                : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {slice.label}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 truncate">
+                          {slice.confidence.toFixed(1)}% Conf
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Detailed Findings & Recommendations Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 items-start">
               
-              {/* Scan Preview Column (4 Cols) */}
-              <div className="lg:col-span-4 med-card p-4 sm:p-5 bg-white flex flex-col gap-3 sm:gap-4">
-                <h4 className="text-[11px] sm:text-xs font-bold text-[#03045e] uppercase tracking-wider">
-                  Analyzed Scan Visual
-                </h4>
-                <div className="relative w-full h-52 sm:h-64 rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center">
-                  <img
-                    src={result.imageUrl || previewUrl || ""}
-                    alt="Analyzed Scan"
-                    className="max-h-full max-w-full object-contain"
-                  />
+              {/* Scan Preview & Grad-CAM Column (5 Cols) */}
+              <div className="lg:col-span-5 med-card p-4 sm:p-5 bg-white flex flex-col gap-3.5">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-1.5 text-[#03045e]">
+                    <Layers className="w-4 h-4 text-[#0077b6]" />
+                    <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider">
+                      {result.isBatch && result.slices
+                        ? `Visual Inspection (Slice #${selectedBatchIndex + 1})`
+                        : "Visual Inspection"}
+                    </h4>
+                  </div>
+                  {((result.isBatch && result.slices?.[selectedBatchIndex]?.heatmapOverlay) || result.heatmapOverlay) && (
+                    <div className="inline-flex items-center gap-1 bg-[#caf0f8]/60 text-[#0077b6] text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full border border-[#90e0ef]/70">
+                      <Sparkles className="w-3 h-3 text-[#0077b6]" />
+                      <span>Grad-CAM Active</span>
+                    </div>
+                  )}
                 </div>
-                <div className="text-[11px] sm:text-xs text-slate-500 flex flex-col gap-1 pt-2 border-t border-slate-100">
+
+                {/* PACS Radiology Inspection Suite & Visual Comparison */}
+                <RadiologyViewer
+                  imageUrl={
+                    result.isBatch && result.slices && result.slices[selectedBatchIndex]
+                      ? result.slices[selectedBatchIndex].imageUrl || result.imageUrl || previewUrl || ""
+                      : result.imageUrl || previewUrl || ""
+                  }
+                  heatmapUrl={
+                    result.isBatch && result.slices && result.slices[selectedBatchIndex]
+                      ? result.slices[selectedBatchIndex].heatmapOverlay || result.heatmapOverlay
+                      : result.heatmapOverlay
+                  }
+                  visualMode={visualMode}
+                  onVisualModeChange={setVisualMode}
+                  gradcamLayer={
+                    result.isBatch && result.slices && result.slices[selectedBatchIndex]
+                      ? result.slices[selectedBatchIndex].gradcamLayer || result.gradcamLayer
+                      : result.gradcamLayer
+                  }
+                  alt={
+                    result.isBatch && result.slices && result.slices[selectedBatchIndex]
+                      ? `Slice #${result.slices[selectedBatchIndex].sliceIndex}`
+                      : "Analyzed Ultrasound Scan"
+                  }
+                />
+
+                <div className="text-[11px] sm:text-xs text-slate-500 flex flex-col gap-1 pt-1 border-t border-slate-100">
                   <span className="font-semibold text-[#03045e]">
                     Timestamp: {new Date(result.metrics.timestamp).toLocaleTimeString()}
                   </span>
@@ -680,8 +1062,8 @@ export default function DiagnosePage() {
                 </div>
               </div>
 
-              {/* Clinical Details Column (8 Cols) */}
-              <div className="lg:col-span-8 flex flex-col gap-4 sm:gap-6">
+              {/* Clinical Details Column (7 Cols) */}
+              <div className="lg:col-span-7 flex flex-col gap-4 sm:gap-6">
                 
                 {/* Findings Card */}
                 <div className="med-card p-4 sm:p-6 lg:p-7 bg-white flex flex-col gap-2.5">
@@ -731,6 +1113,18 @@ export default function DiagnosePage() {
               </div>
             </div>
 
+            {/* Evidence-Based Preventive Care & 24h Hydration Planner */}
+            <PreventiveCareCard
+              isStone={result.isStone}
+              confidence={result.confidence}
+              initialAge={result.metrics.patientAge}
+              initialGender={result.metrics.patientGender}
+              initialWeight={70}
+              sliceCount={result.totalSlices || 1}
+              positiveSliceCount={result.positiveCount || (result.isStone ? 1 : 0)}
+              serverRiskProfile={result.clinicalRisk}
+            />
+
             {/* Bottom Action Toolbar */}
             <div className="pt-4 sm:pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 print:hidden">
               <button
@@ -754,10 +1148,29 @@ export default function DiagnosePage() {
                 <button
                   type="button"
                   onClick={handlePrint}
-                  className="btn-primary text-xs sm:text-sm px-5 sm:px-6 py-2.5 sm:py-3 rounded-full flex items-center gap-2 w-full sm:w-auto justify-center"
+                  className="btn-ghost text-xs sm:text-sm px-4 sm:px-5 py-2.5 sm:py-3 rounded-full flex items-center gap-2 w-full sm:w-auto justify-center"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>Print Clinical Report</span>
+                  <span>Print View</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf || !result?.reportId}
+                  className="btn-primary text-xs sm:text-sm px-5 sm:px-6 py-2.5 sm:py-3 rounded-full flex items-center gap-2 w-full sm:w-auto justify-center shadow-md shadow-[#0077b6]/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {downloadingPdf ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Generating PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Download Official Clinical PDF</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

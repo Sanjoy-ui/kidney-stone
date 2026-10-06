@@ -8,6 +8,7 @@ const dashboardRouter = express.Router()
 
 dashboardRouter.get("/getdata", apiLimiter, isAuth, getUser, getDashboardData)
 dashboardRouter.get("/report/:reportId", apiLimiter, isAuth, getUser, getReportById)
+dashboardRouter.get(`/download-report/:reportId`, apiLimiter, isAuth, getUser, downloadReportPDF)
 dashboardRouter.post(`/download-report/:reportId`, apiLimiter, isAuth, getUser, downloadReportPDF)
 
 export default dashboardRouter

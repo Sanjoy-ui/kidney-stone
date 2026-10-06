@@ -152,7 +152,7 @@ export const validateImageFiles = (req, res, next) => {
         const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
         const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
         const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-        const MAX_FILES = 5;
+        const MAX_FILES = 6;
 
         if (req.files.length > MAX_FILES) {
             // Cleanup all files
